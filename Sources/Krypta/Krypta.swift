@@ -4,18 +4,16 @@ import Copenssl
 
 public typealias Byte = UInt8
 
-let saltMagic = "Salted__"
-let saltLen = 8
-let keyLen = 32
+let kSaltLen = 8
+let kKeyLen = 32
 let kIVMagic = "Initialization__"
-let ivLen = 16
-let numIterations: Int32 = 10_000
-let bufSize = 1024
-let cipherBlockSize = 16
+let kIVLen = 16
+let kNumIterations: Int32 = 100_000
+let kBufSize = 1024
+let kCipherBlockSize = 16
 
-let saltFileName = "salt"
-let keyFileName = "key"
-let ivFileName = "iv"
+let keyFileName = "skeleton.key"
+let kCryptFileName = ".krypta"
 
 let itemExtension = "relic"
 
@@ -33,25 +31,138 @@ public struct Relic {
     let ivMagic = [Byte](kIVMagic.utf8)
     let iv: [Byte]
     let cipher: [Byte]
+
+    public func bytes() -> [Byte] {
+        return ivMagic + iv + cipher
+    }
+}
+
+public struct Krypta: ~Copyable {
+    private let cryptURL: URL
+    private let cryptFileURL: URL
+    private let keyURL: URL
+
+    private let key: [Byte]
+
+    public init(cryptPath: String) throws {
+        let ctx = EVP_CIPHER_CTX_new()
+        defer { EVP_CIPHER_CTX_free(ctx) }
+
+        // save em as individual files to crypt path
+        let fm = FileManager.default
+
+        var isDir = ObjCBool(false)
+        if fm.fileExists(atPath: cryptPath, isDirectory: &isDir) {
+            if !isDir.boolValue {
+                fatalError("Invalid crypt path. File exists and is not a directory.")
+            }
+
+            // TODO: check we have all necessary files
+        // } else {
+        //     throw KryptaError.missingCrypt
+        }
+
+        cryptURL = URL(fileURLWithPath: cryptPath)
+        cryptFileURL = cryptURL.appendingPathComponent(kCryptFileName)
+        keyURL = cryptURL.appendingPathComponent(keyFileName)
+
+        let keyData = try! Data(contentsOf: keyURL)
+        self.key = [Byte](keyData)
+    }
+
+    public static func initialize(cryptPath: String, password: String) throws {
+        var buf = [Byte](repeating: 0, count: kBufSize)
+
+        // generate salt
+        guard RAND_bytes(&buf, Int32(kSaltLen)) == 1 else {
+            fatalError("failed to generate salt")
+        }
+
+        let salt = buf[0..<kSaltLen]
+
+        // generate key, iv
+        let (key, _) = try generateKeyAndIV(password: password, salt: salt)
+
+        // save em as individual files to crypt path
+        let fm = FileManager.default
+
+        var isDir = ObjCBool(false)
+        if fm.fileExists(atPath: cryptPath, isDirectory: &isDir) {
+            if !isDir.boolValue {
+                fatalError("Invalid crypt path. File exists.")
+            }
+
+            // ignore if dir is empty
+            let contents = try fm.contentsOfDirectory(atPath: cryptPath)
+
+            // TODO: have we already initialized?
+            if !contents.isEmpty {
+                fatalError("Crypt path directory already exists: \(cryptPath).")
+            }
+        } else {
+            try! fm.createDirectory(atPath: cryptPath, withIntermediateDirectories: false)
+        }
+
+        let cryptURL = URL(fileURLWithPath: cryptPath)
+        let cryptFileURL = cryptURL.appendingPathComponent(kCryptFileName)
+        let keyURL = cryptURL.appendingPathComponent(keyFileName)
+
+        fm.createFile(atPath: cryptFileURL.path, contents: nil)
+
+        try Data(key).write(to: keyURL)
+
+        print("OK, crypt built at `\(cryptPath)'.")
+    }
+
+    public func add(name: String) throws {
+        print("Type secret for '\(name)': ", terminator: "")
+        guard let secret = readLine(strippingNewline: true) else {
+            fatalError("failed to get secret")
+        }
+
+        print("Re-enter secret for '\(name)': ", terminator: "")
+        guard let confirmation = readLine(strippingNewline: true) else {
+            fatalError("failed to get secret confirmation")
+        }
+
+        if secret != confirmation {
+            fatalError("Secrets don't match. Abort.")
+        }
+
+        try add(name: name, secret: secret)
+    }
+
+    public func add(name: String, secret: String) throws {
+        // TODO: sanitize name before writing file
+        let itemPathURL = cryptURL
+            .appendingPathComponent(name)
+            .appendingPathExtension(itemExtension)  // dot (.) is implicit
+
+        // encrypt the password
+        let relic = try encrypt(key: key, plain: [Byte](secret.utf8))
+
+        // write it to disk
+        try Data(relic.bytes()).write(to: itemPathURL)
+    }
 }
 
 func generateKeyAndIV(password: String, salt: ArraySlice<Byte>) throws -> ([Byte], [Byte]) {
     let digest = EVP_sha256()
-    var keyAndIV = [Byte](repeating: 0, count: keyLen+ivLen)
+    var keyAndIV = [Byte](repeating: 0, count: kKeyLen+kIVLen)
     let saltPtr = salt.withUnsafeBufferPointer { $0.baseAddress }
 
     PKCS5_PBKDF2_HMAC(
         password, Int32(password.count),
-        saltPtr, Int32(saltLen),
-        numIterations, digest,
-        Int32(keyLen+ivLen), &keyAndIV
+        saltPtr, Int32(kSaltLen),
+        kNumIterations, digest,
+        Int32(kKeyLen+kIVLen), &keyAndIV
     )
 
-    let key = Array<Byte>(keyAndIV[0..<keyLen])
-    let iv = Array<Byte>(keyAndIV[keyLen...])
+    let key = Array<Byte>(keyAndIV[0..<kKeyLen])
+    let iv = Array<Byte>(keyAndIV[kKeyLen...])
 
-    assert(key.count == keyLen)
-    assert(iv.count == ivLen)
+    assert(key.count == kKeyLen)
+    assert(iv.count == kIVLen)
 
     return (key, iv)
 }
@@ -61,7 +172,7 @@ public func encrypt(key: [Byte], plain: [Byte]) throws -> Relic {
     defer { EVP_CIPHER_CTX_free(ctx) }
 
     var nbytes = Int32(-1)
-    var outBuf = [Byte](repeating: 0, count: plain.count + cipherBlockSize)
+    var outBuf = [Byte](repeating: 0, count: plain.count + kCipherBlockSize)
     var encrypted = [Byte]()
 
     var padding = UInt32(1)
@@ -71,8 +182,8 @@ public func encrypt(key: [Byte], plain: [Byte]) throws -> Relic {
     ]
 
     // generate new IV for this relic
-    var iv = [Byte](repeating: 0, count: ivLen)
-    guard RAND_bytes(&iv, Int32(ivLen)) == 1 else {
+    var iv = [Byte](repeating: 0, count: kIVLen)
+    guard RAND_bytes(&iv, Int32(kIVLen)) == 1 else {
         fatalError("failed to generate IV")
     }
 
