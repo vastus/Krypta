@@ -32,6 +32,38 @@ public struct Relic {
     let iv: [Byte]
     let cipher: [Byte]
 
+    public init(iv: [Byte], cipher: [Byte]) {
+        self.iv = iv
+        self.cipher = cipher
+    }
+
+    public init(fromURL relicURL: URL) throws {
+        let fh = try FileHandle(forReadingFrom: relicURL)
+
+        // extract iv magic
+        guard let readIVMagic = try fh.read(upToCount: kIVMagic.count) else {
+            fatalError("failed to read IV magic")
+        }
+
+        // assert iv magic is correct
+        guard readIVMagic == Data(kIVMagic.utf8) else {
+            fatalError("failed to verify IV magic")
+        }
+
+        // extract iv
+        guard let iv = try fh.read(upToCount: kIVLen) else {
+            fatalError("failed to read IV")
+        }
+
+        // extract cipher
+        guard let cipher = try fh.readToEnd() else {
+            fatalError("failed to read cipher from file")
+        }
+
+        self.iv = iv.bytes()
+        self.cipher = cipher.bytes()
+    }
+
     public func bytes() -> [Byte] {
         return ivMagic + iv + cipher
     }
@@ -110,8 +142,6 @@ public struct Krypta: ~Copyable {
         fm.createFile(atPath: cryptFileURL.path, contents: nil)
 
         try Data(key).write(to: keyURL)
-
-        print("OK, crypt built at `\(cryptPath)'.")
     }
 
     public func add(name: String) throws {
@@ -149,47 +179,21 @@ public struct Krypta: ~Copyable {
         let fm = FileManager.default
 
         // build file path URL
-        let itemPathURL = cryptURL
+        let itemURL = cryptURL
             .appendingPathComponent(name)
             .appendingPathExtension(itemExtension)
 
         // exit if not found
         var isDir = ObjCBool(false)
-        if !fm.fileExists(atPath: itemPathURL.path, isDirectory: &isDir) {
-            fatalError("TODO: no such password item: \(itemPathURL.path)")
+        if !fm.fileExists(atPath: itemURL.path, isDirectory: &isDir) {
+            fatalError("TODO: no such password item: \(itemURL.path)")
         }
 
         if isDir.boolValue {
             fatalError("TODO: file path is dir, aborting")
         }
 
-        func inita(from: URL) throws -> Relic {
-            let fh = try FileHandle(forReadingFrom: itemPathURL)
-
-            // extract iv magic
-            guard let readIVMagic = try fh.read(upToCount: kIVMagic.count) else {
-                fatalError("failed to read IV magic")
-            }
-
-            // assert iv magic is correct
-            guard readIVMagic == Data(kIVMagic.utf8) else {
-                fatalError("failed to verify IV magic")
-            }
-
-            // extract iv
-            guard let iv = try fh.read(upToCount: kIVLen) else {
-                fatalError("failed to read IV")
-            }
-
-            // extract cipher
-            guard let cipher = try fh.readToEnd() else {
-                fatalError("failed to read cipher from file")
-            }
-
-            return Relic(iv: iv.bytes(), cipher: cipher.bytes())
-        }
-
-        let relic = try inita(from: itemPathURL)
+        let relic = try Relic(fromURL: itemURL)
 
         let decrypted = try decrypt(key: key, relic: relic)
 
