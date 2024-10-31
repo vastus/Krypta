@@ -90,3 +90,24 @@ func retrieve() throws {
 
     #expect(secret == gotSecret)
 }
+
+@Test
+func list() throws {
+    let fm = FileManager.default
+    let cryptPath = mkUniqCryptDir()
+
+    defer { try! fm.removeItem(atPath: cryptPath) }
+    try Krypta.initialize(cryptPath: cryptPath, password: password)
+
+    let krypta = try Krypta(cryptPath: cryptPath)
+
+    let name = "alice"
+    try krypta.add(name: name, secret: name)
+
+    let anotherName = "bob"
+    try krypta.add(name: anotherName, secret: anotherName)
+
+    let names = try krypta.list()
+
+    #expect(names.sorted() == ["alice", "bob"])
+}

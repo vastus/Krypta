@@ -199,6 +199,17 @@ public struct Krypta: ~Copyable {
 
         return plain
     }
+
+    public func list() throws -> [String] {
+        let fm = FileManager.default
+        let items = try fm.contentsOfDirectory(atPath: cryptURL.path)
+        let suffix = "." + itemExtension
+
+        return items
+            .filter { $0.hasSuffix(suffix) }
+            .map { $0.dropLast(suffix.count) }
+            .map { String($0) }
+    }
 }
 
 func generateKeyAndIV(password: String, salt: ArraySlice<Byte>) throws -> ([Byte], [Byte]) {
