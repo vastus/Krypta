@@ -80,7 +80,7 @@ public struct Krypta: ~Copyable {
 
         let salt = buf[0..<kSaltLen]
 
-        // generate key, iv
+        // generate key
         let (key, _) = try generateKeyAndIV(password: password, salt: salt)
 
         // save em as individual files to crypt path
@@ -143,6 +143,61 @@ public struct Krypta: ~Copyable {
 
         // write it to disk
         try Data(relic.bytes()).write(to: itemPathURL)
+    }
+
+    public func retrieve(name: String) throws -> String {
+        let fm = FileManager.default
+
+        // build file path URL
+        let itemPathURL = cryptURL
+            .appendingPathComponent(name)
+            .appendingPathExtension(itemExtension)
+
+        // exit if not found
+        var isDir = ObjCBool(false)
+        if !fm.fileExists(atPath: itemPathURL.path, isDirectory: &isDir) {
+            fatalError("TODO: no such password item: \(itemPathURL.path)")
+        }
+
+        if isDir.boolValue {
+            fatalError("TODO: file path is dir, aborting")
+        }
+
+        func inita(from: URL) throws -> Relic {
+            let fh = try FileHandle(forReadingFrom: itemPathURL)
+
+            // extract iv magic
+            guard let readIVMagic = try fh.read(upToCount: kIVMagic.count) else {
+                fatalError("failed to read IV magic")
+            }
+
+            // assert iv magic is correct
+            guard readIVMagic == Data(kIVMagic.utf8) else {
+                fatalError("failed to verify IV magic")
+            }
+
+            // extract iv
+            guard let iv = try fh.read(upToCount: kIVLen) else {
+                fatalError("failed to read IV")
+            }
+
+            // extract cipher
+            guard let cipher = try fh.readToEnd() else {
+                fatalError("failed to read cipher from file")
+            }
+
+            return Relic(iv: iv.bytes(), cipher: cipher.bytes())
+        }
+
+        let relic = try inita(from: itemPathURL)
+
+        let decrypted = try decrypt(key: key, relic: relic)
+
+        guard let plain = String(bytes: decrypted, encoding: .utf8) else {
+            fatalError("failed to convert bytes to string")
+        }
+
+        return plain
     }
 }
 

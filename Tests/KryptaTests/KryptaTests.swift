@@ -56,7 +56,7 @@ func add() throws {
     try Krypta.initialize(cryptPath: cryptPath, password: password)
 
     let name = "yahoo.com"
-    let secret = "You tryna AWOL"
+    let secret = "Walking steps"
 
     let krypta = try Krypta(cryptPath: cryptPath)
     try krypta.add(name: name, secret: secret)
@@ -70,4 +70,23 @@ func add() throws {
 
     #expect(!isDir.boolValue, "item path should not be a dir")
     #expect(exists, "item should exist")
+}
+
+@Test
+func retrieve() throws {
+    let fm = FileManager.default
+    let cryptPath = mkUniqCryptDir()
+
+    defer { try! fm.removeItem(atPath: cryptPath) }
+    try Krypta.initialize(cryptPath: cryptPath, password: password)
+
+    let krypta = try Krypta(cryptPath: cryptPath)
+
+    let name = "yahoo.com"
+    let secret = "Who's yodeling"
+    try krypta.add(name: name, secret: secret)
+
+    let gotSecret = try krypta.retrieve(name: name)
+
+    #expect(secret == gotSecret)
 }
