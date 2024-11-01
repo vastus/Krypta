@@ -111,3 +111,32 @@ func list() throws {
 
     #expect(names.sorted() == ["alice", "bob"])
 }
+
+@Test
+func remove() throws {
+    let fm = FileManager.default
+    let cryptPath = mkUniqCryptDir()
+
+    defer { try! fm.removeItem(atPath: cryptPath) }
+    try Krypta.initialize(cryptPath: cryptPath, password: password)
+
+    let name = "yahoo.com"
+    let secret = "Walking steps"
+
+    let krypta = try Krypta(cryptPath: cryptPath)
+    try krypta.add(name: name, secret: secret)
+
+    let itemURL = URL(filePath: cryptPath)
+        .appendingPathComponent(name)
+        .appendingPathExtension(itemExtension)
+
+    var isDir = ObjCBool(false)
+    let exists = fm.fileExists(atPath: itemURL.path, isDirectory: &isDir)
+
+    #expect(!isDir.boolValue, "item path should not be a dir")
+    #expect(exists, "item should exist")
+
+    // remove
+    let _ = try krypta.remove(name: name)
+    #expect(!fm.fileExists(atPath: itemURL.path))
+}

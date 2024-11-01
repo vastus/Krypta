@@ -25,6 +25,7 @@ extension Data {
 
 enum KryptaError: Error {
     case badIVMagic
+    case noSuchRelic
 }
 
 public struct Relic {
@@ -213,6 +214,22 @@ public struct Krypta: ~Copyable {
             .filter { $0.hasSuffix(suffix) }
             .map { $0.dropLast(suffix.count) }
             .map { String($0) }
+    }
+
+    public func remove(name: String) throws -> Result<Void, Error> {
+        // TODO: sanitize name before writing file
+        let itemURL = cryptURL
+            .appendingPathComponent(name)
+            .appendingPathExtension(itemExtension)
+
+        let fm = FileManager.default
+
+        if !fm.fileExists(atPath: itemURL.path) {
+            return .failure(KryptaError.noSuchRelic)
+        }
+
+        try fm.removeItem(at: itemURL)
+        return .success(())
     }
 }
 
