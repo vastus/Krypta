@@ -23,8 +23,7 @@ extension Data {
     }
 }
 
-enum KryptaError: Error {
-    case badIVMagic
+public enum KryptaError: Error {
     case noSuchRelic
 }
 
